@@ -265,6 +265,8 @@ So, at matched settings, the quantum head does not beat the classical head on ac
 
 ## License
 
-To be determined.
+MIT License
+
+Copyright (c) 2026 eBrain Lab at NYU
 
 </div>
