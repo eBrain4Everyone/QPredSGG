@@ -220,34 +220,3 @@ Two standard SGG long-tail metrics get computed during validation:
 
 Both are logged per epoch, saved alongside the model and optimizer state in each checkpoint, and plotted automatically to `training_curves.png` in the configured output directory.
 
----
-
-## Roadmap
-
-- [ ] Publish a quantitative comparison of the classical and quantum QP-Head on VG150, both simulator and hardware
-- [ ] Release pretrained checkpoints
-- [ ] Write up ablation results for the qubit/head count sweep (4x4, 8-qubit, 16-qubit variants)
-- [ ] Link the camera-ready manuscript once it's out
-
----
-
-## Citation
-
-If you use this code, please cite the accompanying manuscript (BibTeX below will be filled in once it's accepted):
-
-```bibtex
-@inproceedings{qpredsgg,
-  title     = {QPredSGG: Hybrid Quantum Predicate Learning for Long-Tailed Scene Graph Generation},
-  author    = {TBD},
-  booktitle = {IEEE International Conference on Tools with Artificial Intelligence (ICTAI)},
-  year      = {2026}
-}
-```
-
----
-
-## License
-
-To be determined.
-
-</div>
