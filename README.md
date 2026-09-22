@@ -7,13 +7,13 @@
 [![Python](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-EE4C2C.svg?logo=pytorch)](https://pytorch.org/)
 [![PennyLane](https://img.shields.io/badge/PennyLane-quantum--ml-9C4DFF.svg)](https://pennylane.ai/)
-[![Hardware](https://img.shields.io/badge/hardware-IBM%20Q%20%7C%20IonQ-informational)](#quantum-predicate-head-qp-head)
-[![Status](https://img.shields.io/badge/status-IEEE%20ICTAI%20submission-yellow)](#citation)
-[![License](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
+[![Hardware](https://img.shields.io/badge/hardware-IBM%20ibm__fez-informational)](#quantum-predicate-head-qp-head)
+[![Status](https://img.shields.io/badge/status-IEEE%20ICTAI%202026-yellow)](#results)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 
 A Causal Feature Enhancement Network (CFEN) for Scene Graph Generation, with a parameterized quantum circuit swapped in as the predicate classification head and tested on both simulators and real quantum hardware.
 
-[Overview](#overview) · [Architecture](#architecture) · [Quantum Head](#quantum-predicate-head-qp-head) · [Installation](#installation) · [Usage](#usage) · [Repository Structure](#repository-structure) · [Citation](#citation)
+[Overview](#overview) · [Architecture](#architecture) · [Quantum Head](#quantum-predicate-head-qp-head) · [Installation](#installation) · [Usage](#usage) · [Repository Structure](#repository-structure) · [Evaluation](#evaluation) · [Results](#results) · [License](#license)
 
 </div>
 
@@ -21,14 +21,16 @@ A Causal Feature Enhancement Network (CFEN) for Scene Graph Generation, with a p
 
 ## Overview
 
-Scene Graph Generation (SGG) models tend to lean hard on a small set of frequent predicates like "on," "has," or "near," while largely ignoring rarer but more informative relations like "carrying" or "painted on." This repository is our attempt at pushing back on that long-tail bias, using two ideas together:
+Scene Graph Generation (SGG) models tend to lean hard on a small set of frequent predicates like "on," "of," or "in," while largely ignoring rarer but more informative relations like "carrying" or "painted on." This repository pushes back on that long-tail bias, using two ideas together:
 
 1. **Causal Feature Enhancement (CFEN):** a fact and counterfactual branch setup that tries to isolate what an object's *specific* features contribute to a predicate prediction, separate from what you'd predict just from knowing its general object class.
-2. **A Quantum Predicate Head (QP-Head):** a replacement for the usual MLP predicate classifier, built from a small parameterized quantum circuit (PQC). Context features are amplitude-encoded into qubits, entangled, and measured to produce the logits that feed into the CFEN debiasing objective.
+2. **A Quantum Predicate Head (QP-Head):** a replacement for the usual MLP predicate classifier, built from a small parameterized quantum circuit (PQC). Context features are amplitude- or angle-encoded into qubits, entangled, and measured to produce the logits that feed into the classification objective.
 
 The repo has **both variants side by side**: a classical baseline in `cfen/` and the quantum version in `cfen_quantum_head/`. Both also support a synthetic data generator, so you can run the full training and evaluation loop and confirm everything works before touching the real dataset.
 
-> This is the reference implementation for the manuscript "QPredSGG: Hybrid Quantum Predicate Learning for Long-Tailed Scene Graph Generation," currently being prepared for submission to **IEEE ICTAI**.
+On Visual Genome 150 under the PredCls setting, the best-tuned QP-Head reaches a peak **mR@100 of 57.25%**, well above the 41.1% reported for the original classical CFEN, while its predicate decision layer runs on a representation that's **128x smaller** than the classical head's and uses as few as **96 trainable quantum parameters**. See [Results](#results) for the full picture, including a protocol-matched comparison that separates the quantum circuit's contribution from the training objective's.
+
+> This is the reference implementation for "QPredSGG: Hybrid Quantum Predicate Learning for Long-Tailed Scene Graph Generation," by Prerana Ramkumar (American University of Sharjah), Nouhaila Innan and Muhammad Shafique (NYU Abu Dhabi, eBRAIN Lab and the Center for Quantum and Topological Systems), submitted to IEEE ICTAI 2026.
 
 ---
 
@@ -65,21 +67,24 @@ on EMA class-generic features"]
     I --> L["Fusion: logits = L_f + L_sp"]
     K --> L
 
-    L --> M["Cross-entropy loss"]
+    L --> M["Classification loss
+CE, or class-balanced WCE for long-tail training"]
     K --> N["DM loss, KL divergence
-weighted by lambda"]
-    M --> O["Total loss = CE + lambda * DM"]
+weighted by lambda (0.4)"]
+    M --> O["Total loss = (CE or WCE) + lambda * DM"]
     N --> O
 
-    subgraph QP["Quantum Predicate Head, drop-in replacement for the classifier in G / H"]
+    subgraph QP["Quantum Predicate Head, drop-in replacement for the classifier in G / H
+best config: 4 qubits, Amplitude Embedding, Strongly Entangling Layers"]
         direction LR
         Q1["Linear reduction
-4096 to 16 dims"] --> Q2["tanh, then L2 normalize"]
+4096 to 16 dims"] --> Q2["Angle or Amplitude embedding"]
         Q2 --> Q3["4 parallel circuits
-4 qubits each"]
-        Q3 --> Q4["Amplitude embedding"]
-        Q4 --> Q5["Strongly entangling layers
-2 layers, 96 trainable params"]
+4 (or 8) qubits each"]
+        Q3 --> Q4["Basic or Strongly
+Entangling Layers"]
+        Q4 --> Q5["2, 4, or 6 layers
+96 to 576 trainable params"]
         Q5 --> Q6["PauliZ expectation readout
 per qubit"]
         Q6 --> Q7["Linear: 16 to 51 classes"]
@@ -93,8 +98,9 @@ A few notes on why it's built this way:
 
 - The **fact branch** works from real, instance-specific object features.
 - The **counterfactual branch** swaps those out for a slowly-updated, class-generic EMA memory. It's basically asking: what would the model predict if it only knew the object's category, not this particular instance?
-- Subtracting the two (`L_sp = L_f - L_cf`) gives you the part of the prediction that's actually driven by the specific object, rather than its category. That difference is fused back with the fact logits and also pushed through a KL-divergence debiasing (DM) loss against the ground-truth predicate distribution, which is where the long-tail correction actually happens.
-- The **QP-Head** is a straight swap at the classifier stage of either branch. Classical two-layer MLP on one side, 4-head / 4-qubit parameterized quantum circuit on the other, with the rest of the pipeline held identical so the two are actually comparable.
+- Subtracting the two (`L_sp = L_f - L_cf`) gives you the part of the prediction that's actually driven by the specific object, rather than its category. That difference is fused back with the fact logits and also pushed through a KL-divergence debiasing (DM) loss against the ground-truth predicate distribution.
+- On top of that, the paper trains with a **class-balanced weighted cross-entropy (WCE)** loss instead of standard CE for the classification term, which is what actually moves the long-tail metric: rare-class gradients get scaled up by inverse class frequency, clipped to a maximum 46x rare-to-frequent weight ratio.
+- The **QP-Head** is a swap at the classifier stage of either branch. Encoding (Angle vs Amplitude embedding), entangling template (Basic vs Strongly Entangling Layers), qubit count (4 or 8 per circuit), and depth (2, 4, or 6 layers) are all part of a design-space search in the paper. The diagram above shows the best-performing configuration found: 4 qubits, Amplitude Embedding, Strongly Entangling Layers, 2 layers, 4 parallel circuits, 96 trainable quantum parameters.
 - Feature extraction (Faster R-CNN + RoI Align) is a separate, offline preprocessing step that runs once and writes `.npz` files per image. It isn't part of the CFEN model's forward pass itself.
 
 ---
@@ -103,21 +109,20 @@ A few notes on why it's built this way:
 
 The quantum variant lives in [`cfen_quantum_head/models/quantum_circuit.py`](cfen_quantum_head/models/quantum_circuit.py) and [`relation_head.py`](cfen_quantum_head/models/relation_head.py), built on **[PennyLane](https://pennylane.ai/)** with a PyTorch interface.
 
-| Component | Configuration |
-|---|---|
-| Encoding | `AmplitudeEmbedding`, classical features compressed into probability amplitudes |
-| Entanglement | `StronglyEntanglingLayers` (2 layers x 4 qubits x 3 rotation params) |
-| Heads | 4 parallel circuits x 4 qubits each, 16-dim combined quantum feature space |
-| Readout | Expectation value of PauliZ per wire |
-| Trainable quantum params | 96 total (4 heads x 2 layers x 4 qubits x 3) |
-| Simulator backend | `default.qubit`, `diff_method="backprop"` |
-| Hardware backend | Real device (IBM Q, IonQ), `diff_method="parameter-shift"` |
+The paper searches this design space rather than fixing it:
 
-The flow into the circuit: BiTreeLSTM context vectors for subject and object (2 x 2048-d, concatenated) get linearly reduced to 16 dimensions, passed through `tanh`, L2-normalized, then split across 4 independent 4-qubit circuits. Their outputs are concatenated and projected to the 51 VG predicate classes.
+| Axis | Options explored | Best found |
+|---|---|---|
+| Qubits per circuit | 4, 8 | 4 (8 scales well too) |
+| Encoding | Angle Embedding, Amplitude Embedding | Amplitude |
+| Entangling template | Basic Entangling Layers (BEL), Strongly Entangling Layers (SEL) | SEL |
+| Circuit depth | 2, 4, 6 layers | 2 layers (4-qubit); 4 layers (8-qubit, best latency/expressibility trade-off) |
+| Parallel circuits (heads) | fixed at 4 | 4 |
+| Readout | Expectation value of PauliZ per wire, 4 heads x n qubits, then a linear layer to 51 classes | |
 
-The device is swappable at the code level: `QuantumLayer` accepts either a local simulator or a `qml.device` pointed at real IBM Quantum or IonQ hardware, and switches its differentiation rule automatically, `backprop` on the simulator, `parameter-shift` on real hardware (since you can't backprop through an actual quantum computer).
+The primary, best-performing configuration is **4 qubits, Amplitude Embedding, Strongly Entangling Layers, 2 layers**, giving 96 trainable quantum parameters. BiTreeLSTM context vectors for subject and object (4096-d pair embedding) are linearly reduced to 16 dimensions, then split across 4 independent 4-qubit circuits whose outputs are concatenated and projected to the 51 VG predicate classes.
 
-The commented-out blocks left in `quantum_circuit.py` and `relation_head.py` are from earlier ablation runs (32 heads, 8 qubits, 16 qubits, different layer counts) that were tried before settling on the 4-head, 4-qubit configuration described above. They're kept in the file as a record of what was explored, not as active code paths.
+The device is swappable at the code level: `QuantumLayer` accepts either a local simulator (`default.qubit`, `diff_method="backprop"`) or a `qml.device` pointed at real hardware, switching to `diff_method="parameter-shift"` automatically (since you can't backpropagate through an actual quantum computer). The paper's physical feasibility test ran the 4-qubit, 2-layer configuration on IBM's **ibm_fez** (a 156-qubit Heron r2 processor, native CZ two-qubit gate, 1,024 shots per circuit) against 9 VG-150 validation triplets, correctly classifying 6 of 9 without the predictions collapsing to a single output class.
 
 ---
 
@@ -207,7 +212,7 @@ Both configs default to `DATASET.USE_SYNTHETIC: true`, which generates a small i
 
 ### 3. Running on real quantum hardware
 
-Pass a `qml.device` bound to an IBM Quantum or IonQ backend into `QuantumLayer(q_device=...)` instead of the default `default.qubit` simulator. The circuit picks up `parameter-shift` differentiation automatically once it detects a hardware device.
+Pass a `qml.device` bound to a real backend into `QuantumLayer(q_device=...)` instead of the default `default.qubit` simulator. The circuit picks up `parameter-shift` differentiation automatically once it detects a hardware device. The paper's own hardware run used the 4-qubit, 2-layer configuration on IBM's ibm_fez.
 
 ---
 
@@ -220,3 +225,46 @@ Two standard SGG long-tail metrics get computed during validation:
 
 Both are logged per epoch, saved alongside the model and optimizer state in each checkpoint, and plotted automatically to `training_curves.png` in the configured output directory.
 
+The paper additionally profiles the quantum circuit itself, independent of task accuracy: **expressibility** (KL divergence of the circuit's output-fidelity distribution from the Haar-random reference) and **entanglement capability** (Von Neumann entropy of a traced-out subsystem), alongside parameter counts and CUDA inference latency broken down by kernel call. These are used to explain *why* a given configuration performs the way it does, not just report that it does.
+
+---
+
+## Results
+
+All numbers below are from the PredCls setting on VG150 (ground-truth object labels and boxes), reported in the accompanying paper.
+
+**Protocol-matched comparison** (same CFEN backbone, same WCE loss, same evaluation, only the predicate head differs):
+
+| Metric | Classical MLP head | 4-qubit QP-Head | Note |
+|---|---|---|---|
+| Feature dimension | 2048 | 16 | Quantum is 128x smaller |
+| Trainable head params | large MLP | 96 | |
+| R@50 | 72.78% | 72.59% | Within 0.19 points |
+| mR@50 | 28.99% | 24.30% | Classical leads by 4.7 points |
+| Epochs to converge | ~8 | ~18 | Classical converges faster |
+
+So, at matched settings, the quantum head does not beat the classical head on accuracy. Its advantage is that it gets close while working from a much smaller representation and far fewer parameters.
+
+**Best-tuned configurations**, compared against literature numbers for other SGG methods under PredCls:
+
+| Method | R@50 | R@100 | mR@50 | mR@100 | Quantum params |
+|---|---|---|---|---|---|
+| Motifs | 67.1 | - | 15.8 | - | 0 |
+| VCTree-TDE | - | 51.6 | - | 28.7 | 0 |
+| CFEN (literature) | - | - | - | 41.1 | 0 |
+| QP-Head, 4-qubit (Amplitude + SEL) | 84.58 | - | - | **57.25** | 96 |
+| QP-Head, 8-qubit (Amplitude + SEL, 4 layers) | 83.73 | 92.41 | 40.45 | 55.38 | 384 |
+
+**Hardware feasibility**, 4-qubit, 2-layer configuration on IBM's ibm_fez, 9 VG-150 validation triplets, submitted individually:
+
+- 6 of 9 correct (66.67% batch accuracy)
+- 1.42 s per triplet end-to-end latency (unbatched, an upper bound)
+- Predictions spanned 4 distinct predicate classes rather than collapsing to one
+
+---
+
+## License
+
+To be determined.
+
+</div>
