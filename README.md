@@ -30,7 +30,7 @@ The repo has **both variants side by side**: a classical baseline in `cfen/` and
 
 On Visual Genome 150 under the PredCls setting, the best-tuned QP-Head reaches a peak **mR@100 of 57.25%**, well above the 41.1% reported for the original classical CFEN, while its predicate decision layer runs on a representation that's **128x smaller** than the classical head's and uses as few as **96 trainable quantum parameters**. See [Results](#results) for the full picture, including a protocol-matched comparison that separates the quantum circuit's contribution from the training objective's.
 
-> This is the reference implementation for "QPredSGG: Hybrid Quantum Predicate Learning for Long-Tailed Scene Graph Generation," by Prerana Ramkumar (American University of Sharjah), Nouhaila Innan and Muhammad Shafique (NYU Abu Dhabi, eBRAIN Lab and the Center for Quantum and Topological Systems), submitted to IEEE ICTAI 2026.
+> This is the reference implementation for **[QPredSGG: Hybrid Quantum Predicate Learning for Long-Tailed Scene Graph Generation](https://arxiv.org/abs/2606.04689)** by Prerana Ramkumar (American University of Sharjah), Nouhaila Innan and Muhammad Shafique (NYU Abu Dhabi, eBRAIN Lab and the Center for Quantum and Topological Systems), accepted at IEEE ICTAI 2026.
 
 ---
 
@@ -262,7 +262,19 @@ So, at matched settings, the quantum head does not beat the classical head on ac
 - Predictions spanned 4 distinct predicate classes rather than collapsing to one
 
 ---
+### Citation
 
+If you use this work, please cite:
+
+```bibtex
+@article{qpredsgg2026,
+  title={QPredSGG: Hybrid Quantum Predicate Learning for Long-Tailed Scene Graph Generation},
+  author={Ramkumar, Prerana and Innan, Nouhaila and Shafique, Muhammad},
+  journal={arXiv preprint arXiv:2606.04689},
+  year={2026},
+  doi={10.48550/arXiv.2606.04689}
+}
+```
 ## License
 
 MIT License
